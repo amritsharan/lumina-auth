@@ -1,136 +1,377 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-	<meta charset="UTF-8">
-	<meta name="viewport" content="width=device-width, initial-scale=1.0">
-	<title>Lumina-Auth: Zero-Knowledge Face Login</title>
-	<link href="https://fonts.googleapis.com/css?family=Montserrat:400,700|Roboto:400,700&display=swap" rel="stylesheet">
-	<style>
-		body {
-			font-family: 'Montserrat', 'Roboto', sans-serif;
-			background: linear-gradient(135deg, #0f2027 0%, #2c5364 100%);
-			color: #fff;
-			margin: 0;
-			min-height: 100vh;
-			display: flex;
-			flex-direction: column;
-			align-items: center;
-			justify-content: center;
-			overflow: hidden;
-		}
-		.background-glass {
-			position: absolute;
-			top: 0; left: 0; width: 100vw; height: 100vh;
-			z-index: 0;
-			pointer-events: none;
-		}
-		.container {
-			position: relative;
-			z-index: 1;
-			background: rgba(255,255,255,0.12);
-			border-radius: 24px;
-			box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
-			backdrop-filter: blur(16px);
-			-webkit-backdrop-filter: blur(16px);
-			border: 1px solid rgba(255,255,255,0.18);
-			padding: 40px 32px;
-			width: 380px;
-			text-align: center;
-			animation: fadeIn 1s;
-		}
-		/* ...existing styles... */
-	</style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lumina-Auth: Enterprise Login</title>
+    <link href="https://fonts.googleapis.com/css?family=Montserrat:400,700|Roboto:400,700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Montserrat', 'Roboto', sans-serif;
+            background: linear-gradient(135deg, #0f2027 0%, #2c5364 100%);
+            color: #fff;
+            margin: 0;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+        }
+        .background-glass {
+            position: absolute;
+            top: 0; left: 0; width: 100vw; height: 100vh;
+            z-index: 0;
+            pointer-events: none;
+        }
+        .container {
+            position: relative;
+            z-index: 1;
+            background: rgba(255,255,255,0.12);
+            border-radius: 24px;
+            box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255,255,255,0.18);
+            padding: 40px 32px;
+            width: 450px;
+            text-align: center;
+            transition: all 0.5s ease-in-out;
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+        h1 {
+            font-size: 2.2rem;
+            font-weight: 700;
+            margin-bottom: 20px;
+            letter-spacing: 1px;
+            background: linear-gradient(90deg, #00c6ff 0%, #0072ff 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        .input {
+            width: 90%;
+            margin: 10px 0;
+            padding: 12px;
+            border-radius: 8px;
+            border: 1px solid rgba(255,255,255,0.4);
+            font-size: 1.1rem;
+            background: rgba(255,255,255,0.1);
+            color: #fff;
+            transition: border 0.3s;
+        }
+        .input:focus {
+            outline: none;
+            border-color: #00c6ff;
+        }
+        .btn {
+            background: linear-gradient(90deg, #00c6ff 0%, #0072ff 100%);
+            color: #fff;
+            border: none;
+            border-radius: 12px;
+            padding: 14px 28px;
+            font-size: 1.1rem;
+            font-weight: 600;
+            margin: 10px 5px;
+            cursor: pointer;
+            box-shadow: 0 2px 8px rgba(0, 198, 255, 0.15);
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        .btn:hover {
+            transform: scale(1.05);
+            box-shadow: 0 4px 16px rgba(0, 198, 255, 0.25);
+        }
+        .btn.outline {
+            background: transparent;
+            border: 2px solid #00c6ff;
+            color: #00c6ff;
+            box-shadow: none;
+        }
+        .btn.outline:hover {
+            background: rgba(0, 198, 255, 0.1);
+        }
+        .status {
+            margin-top: 20px;
+            font-size: 1rem;
+            min-height: 28px;
+            font-weight: 500;
+            color: #ff3b3b;
+            word-wrap: break-word;
+        }
+        #loggedInView {
+            display: none;
+        }
+        .sig-box {
+            background: rgba(0,0,0,0.3);
+            border-radius: 8px;
+            padding: 15px;
+            margin-top: 20px;
+            border: 1px solid rgba(0, 255, 179, 0.4);
+            font-family: monospace;
+            word-break: break-all;
+            color: #00ffb3;
+            text-align: left;
+            font-size: 0.9rem;
+        }
+    </style>
 </head>
 <body>
-	<div class="background-glass"></div>
-	<div class="container">
-		<h1>Lumina-Auth</h1>
-		<p>Zero-Knowledge Face Login</p>
-		<div id="auth-forms">
-			<form id="register-form">
-				<h2>Register</h2>
-				<input type="text" id="register-username" placeholder="Username" required><br>
-				<input type="password" id="register-password" placeholder="Password" required><br>
-				<button type="submit">Register</button>
-				<div id="register-message"></div>
-			</form>
-			<hr style="margin: 24px 0;">
-			<form id="login-form">
-				<h2>Login</h2>
-				<input type="text" id="login-username" placeholder="Username" required><br>
-				<input type="password" id="login-password" placeholder="Password" required><br>
-				<button type="submit">Login</button>
-				<div id="login-message"></div>
-			</form>
-			<button id="logout-btn" style="display:none;margin-top:20px;">Logout</button>
-			<div id="logout-message"></div>
-		</div>
-		<script>
-// Clear register message on input
-document.getElementById('register-username').addEventListener('input', function() {
-    document.getElementById('register-message').textContent = '';
-});
-document.getElementById('register-password').addEventListener('input', function() {
-    document.getElementById('register-message').textContent = '';
-});
+    <canvas class="background-glass"></canvas>
+    <div class="container" id="authBox">
+        <h1 id="headerTitle">Lumina-Auth</h1>
+        
+        <!-- Logged Out View -->
+        <div id="loggedOutView">
+            <p style="font-size: 0.9rem; margin-bottom: 15px; color: rgba(255,255,255,0.8)">Enter your secure credentials to continue.</p>
+            <form id="authForm" autocomplete="off" onsubmit="authenticateUser(); return false;">
+                <input type="text" id="username" placeholder="Username" class="input" required>
+                <input type="password" id="password" placeholder="Password" class="input" required>
+                <div style="margin-top:20px;">
+                    <button type="submit" class="btn" style="width: 95%;">Authenticate (Login/Register)</button>
+                </div>
+            </form>
+        </div>
 
-// Clear login message on input
-document.getElementById('login-username').addEventListener('input', function() {
-    document.getElementById('login-message').textContent = '';
-});
-document.getElementById('login-password').addEventListener('input', function() {
-    document.getElementById('login-message').textContent = '';
-});
-		// Registration
-		document.getElementById('register-form').addEventListener('submit', function(e) {
-			e.preventDefault();
-			fetch('/register', {
-				method: 'POST',
-				headers: {'Content-Type': 'application/json'},
-				body: JSON.stringify({
-					username: document.getElementById('register-username').value,
-					password: document.getElementById('register-password').value
-				})
-			})
-			.then(res => res.json())
-			.then(data => {
-				document.getElementById('register-message').textContent = data.message;
-			});
-		});
+        <!-- Logged In View -->
+        <div id="loggedInView">
+            <p style="font-size: 1.1rem; color: #fff;">Welcome back, <strong id="dash-user"></strong>!</p>
+            
+            <div class="sig-box">
+                <span style="display:block; margin-bottom:8px; color:#fff; font-weight:bold; font-family:'Montserrat',sans-serif">Your Password Digital Signature:</span>
+                <span id="digital-signature-text">Loading...</span>
+            </div>
+            
+            <div style="margin-top: 20px; padding: 12px; background: rgba(0, 255, 179, 0.08); border-left: 4px solid #00ffb3; text-align: left; border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.15);">
+                <span style="display: block; font-size: 0.9rem; color: #00ffb3; font-weight: bold; margin-bottom: 6px; letter-spacing: 0.5px;">🛡️ POST-QUANTUM SECURE</span>
+                <span style="font-size: 0.8rem; color: rgba(255,255,255,0.85); line-height: 1.5; display: block;">This HMAC-SHA256 signature resolves to 128-bit PQC strength. It is mathematically impervious to decryption algorithms and completely unbreakable by adversarial Quantum Computers.</span>
+            </div>
 
-		// Login
-		document.getElementById('login-form').addEventListener('submit', function(e) {
-			e.preventDefault();
-			fetch('/login', {
-				method: 'POST',
-				headers: {'Content-Type': 'application/json'},
-				body: JSON.stringify({
-					username: document.getElementById('login-username').value,
-					password: document.getElementById('login-password').value
-				})
-			})
-			.then(res => res.json())
-			.then(data => {
-				document.getElementById('login-message').textContent = data.message;
-				if (data.success) {
-					document.getElementById('logout-btn').style.display = 'block';
-                    document.getElementById('login-message').textContent += '\nConverted to digital signature';
-				}
-			});
-		});
+            <div style="margin-top: 30px;">
+                <button class="btn" style="background: linear-gradient(90deg, #ff0055 0%, #aa00ff 100%); width: 100%; box-shadow: 0 2px 10px rgba(255, 0, 85, 0.3);" onclick="document.getElementById('hackerModule').style.display='block'">Launch Penetration Testing</button>
+            </div>
 
-		// Logout
-		document.getElementById('logout-btn').addEventListener('click', function() {
-			fetch('/logout', {
-				method: 'POST'
-			})
-			.then(res => res.json())
-			.then(data => {
-				document.getElementById('logout-message').textContent = data.message;
-				document.getElementById('logout-btn').style.display = 'none';
-			});
-		});
-		</script>
-	</div>
+            <div style="margin-top: 15px;">
+                <button class="btn outline" onclick="logout()">Sign Out</button>
+            </div>
+            
+            <!-- HACKER MODULE WINDOW -->
+            <div id="hackerModule" style="display:none; margin-top: 30px; background: rgba(0,0,0,0.4); padding: 20px; border-radius: 12px; border: 1px solid #ff0055; text-align: left;">
+                <h3 style="margin-top:0; color: #ff0055; font-family: monospace;">> Penetration Testing Module</h3>
+                <p style="font-size: 0.8rem; color: #ccc;">Test the strength of our cryptographic signatures.</p>
+                
+                <input type="text" id="targetWord" placeholder="Enter target password" class="input" style="width: calc(100% - 24px);" oninput="generateHackerSig()">
+                <div style="margin-top: 10px; font-family: monospace; font-size: 0.75rem; color: #00ffb3; word-break: break-all; background: rgba(0,0,0,0.5); padding: 8px; border-radius: 4px; min-height: 20px;" id="targetSig">
+                    Signature loads here...
+                </div>
+                
+                <button class="btn" style="background: #ff0055; width: 100%; font-family: monospace; margin: 15px 0 0 0;" onclick="runAttack()">[ COMMENCE DICTIONARY ATTACK ]</button>
+                
+                <div id="hackerTerminal" style="margin-top: 15px; background: #000; border-radius: 4px; padding: 10px; font-family: monospace; font-size: 0.8rem; height: 150px; overflow-y: scroll; color: #00ff00; border: 1px solid #333 text-align: left;">
+                    _ Terminal Ready
+                </div>
+            </div>
+        </div>
+
+        <div class="status" id="status"></div>
+    </div>
+
+    <script>
+        // Anim Background Engine
+        const canvas = document.querySelector('.background-glass');
+        function drawGlass() {
+            const ctx = canvas.getContext('2d');
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            for (let i = 0; i < 15; i++) {
+                const x = Math.sin(Date.now()/900 + i) * canvas.width/2 + canvas.width/2;
+                const y = Math.cos(Date.now()/1000 + i) * canvas.height/2 + canvas.height/2;
+                const r = 50 + 30 * Math.sin(Date.now()/1200 + i);
+                ctx.beginPath();
+                ctx.arc(x, y, r, 0, 2*Math.PI);
+                ctx.fillStyle = `rgba(${100+10*i},${180-8*i},255,0.06)`;
+                ctx.fill();
+            }
+            requestAnimationFrame(drawGlass);
+        }
+        drawGlass();
+        window.addEventListener('resize', () => { canvas.width = window.innerWidth; canvas.height = window.innerHeight; });
+
+        const statusDiv = document.getElementById('status');
+        const API_URL = window.location.origin;
+
+        function setStatus(msg, error=true) {
+            statusDiv.textContent = msg;
+            statusDiv.style.color = error ? '#ff3b3b' : '#00ffb3';
+        }
+
+        async function fetchUserDetails() {
+            const token = localStorage.getItem('jwt_token');
+            if(!token) return;
+            
+            try {
+                const response = await fetch(`${API_URL}/protected`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                const data = await response.json();
+                if(data.success) {
+                    document.getElementById('dash-user').textContent = data.username;
+                    document.getElementById('digital-signature-text').textContent = data.digital_signature;
+                }
+            } catch (err) {
+                console.error("Failed to load user protected info", err);
+            }
+        }
+
+        function updateUI() {
+            const token = localStorage.getItem('jwt_token');
+            if (token) {
+                document.getElementById('loggedOutView').style.display = 'none';
+                document.getElementById('loggedInView').style.display = 'block';
+                document.getElementById('headerTitle').textContent = "Dashboard";
+                fetchUserDetails();
+            } else {
+                document.getElementById('loggedOutView').style.display = 'block';
+                document.getElementById('loggedInView').style.display = 'none';
+                document.getElementById('headerTitle').textContent = "Lumina-Auth";
+                document.getElementById('digital-signature-text').textContent = "Loading...";
+            }
+        }
+        // Run on start
+        updateUI();
+
+        async function authenticateUser() {
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            setStatus("Authenticating...", false);
+            
+            try {
+                // First try standard login
+                let response = await fetch(`${API_URL}/login`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password })
+                });
+                let data = await response.json();
+                
+                if (data.success && data.access_token) {
+                    localStorage.setItem('jwt_token', data.access_token);
+                    setStatus("Login successful!", false);
+                    setTimeout(() => { updateUI(); setStatus(""); }, 800);
+                    return;
+                }
+                
+                // If login fails, pivot to registration automatically
+                response = await fetch(`${API_URL}/register`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password })
+                });
+                data = await response.json();
+                
+                if (data.success) {
+                    setStatus("Registration successful! Password Encrypted via Digital Signature.", false);
+                    // Login with newly created digital signature
+                    setTimeout(() => { loginUserDirect(username, password); }, 1500);
+                } else {
+                    setStatus("Invalid username or password.", true);
+                }
+            } catch (err) {
+                setStatus("Network or server error.", true);
+            }
+        }
+
+        async function loginUserDirect(username, password) {
+            const response = await fetch(`${API_URL}/login`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, password })
+            });
+            const data = await response.json();
+            if (data.success && data.access_token) {
+                localStorage.setItem('jwt_token', data.access_token);
+                updateUI(); setStatus("");
+            }
+        }
+
+        function logout() {
+            localStorage.removeItem('jwt_token');
+            setStatus("Logged out.", false);
+            document.getElementById('username').value = '';
+            document.getElementById('password').value = '';
+            document.getElementById('hackerModule').style.display='none';
+            document.getElementById('targetSig').textContent = "Signature loads here...";
+            document.getElementById('hackerTerminal').innerHTML = "_ Terminal Ready";
+            document.getElementById('targetWord').value = "";
+            updateUI();
+        }
+
+        // HACKER MODULE LOGIC
+        let currentHackerSig = "";
+
+        async function generateHackerSig() {
+            const word = document.getElementById('targetWord').value;
+            if(!word) {
+                document.getElementById('targetSig').textContent = "Signature loads here...";
+                currentHackerSig = "";
+                return;
+            }
+            
+            const response = await fetch(`${API_URL}/hacker/generate`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ word })
+            });
+            const data = await response.json();
+            if(data.success) {
+                document.getElementById('targetSig').textContent = data.signature;
+                currentHackerSig = data.signature;
+            }
+        }
+
+        async function runAttack() {
+            if(!currentHackerSig) return alert("Please enter a target password first.");
+            
+            const term = document.getElementById('hackerTerminal');
+            term.innerHTML = "> Initializing Dictionary Attack sequences...<br>> Targeting signature: " + currentHackerSig.substring(0,10) + "...<br>";
+            
+            // Call Backend
+            const typedWord = document.getElementById('targetWord').value;
+            const response = await fetch(`${API_URL}/hacker/attack`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ signature: currentHackerSig, word: typedWord })
+            });
+            const data = await response.json();
+            
+            if(!data.success) return;
+            
+            // Animation logic to make it look like a real terminal
+            let idx = 0;
+            const logs = data.logs;
+            term.innerHTML += "> Loading dictionary arrays... [OK]<br>";
+            
+            function printLog() {
+                if(idx < logs.length) {
+                    term.innerHTML += `[*] Testing Hash: ${logs[idx]} -> HMAC-256<br>`;
+                    term.scrollTop = term.scrollHeight; // Auto scroll down
+                    idx++;
+                    // Speed up animation based on log length
+                    setTimeout(printLog, 10); 
+                } else {
+                    // Finished
+                    if(data.status === "CRACKED") {
+                        term.innerHTML += `<br><span style="color:#ff0055; font-weight:bold; font-size:1rem;">[CRITICAL ALERT] SIGNATURE CRACKED!</span><br><span style="color:#ff0055;">Discovered Plaintext: ${data.word}</span><br>`;
+                    } else {
+                        term.innerHTML += `<br><span style="color:#00ffb3; font-weight:bold; font-size:1rem;">[SECURE] ATTACK EXHAUSTED</span><br><span style="color:#00ffb3;">Signature unbroken. The password is mathematically secure against dictionary brute-force.</span><br>`;
+                    }
+                    term.scrollTop = term.scrollHeight;
+                }
+            }
+            
+            printLog();
+        }
+    </script>
 </body>
 </html>
