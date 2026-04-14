@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lumina-Auth: Enterprise Login</title>
+    <link href="https://fonts.googleapis.com/css?family=Montserrat:400,700|Roboto:400,700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Montserrat', 'Roboto', sans-serif;
+            background: linear-gradient(135deg, #0f2027 0%, #2c5364 100%);
+            color: #fff;
+            margin: 0;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+        }
+        .background-glass {
+            position: absolute;
+            top: 0; left: 0; width: 100vw; height: 100vh;
+            z-index: 0;
+            pointer-events: none;
+        }
+        .container {
+            position: relative;
+            z-index: 1;
+            background: rgba(255,255,255,0.12);
+            border-radius: 24px;
+            box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.37);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255,255,255,0.18);
+            padding: 40px 32px;
+            width: 380px;
+            text-align: center;
+            transition: all 0.5s ease-in-out;
+        }
+        h1 {
+            font-size: 2.2rem;
+            font-weight: 700;
+            margin-bottom: 20px;
+            letter-spacing: 1px;
+            background: linear-gradient(90deg, #00c6ff 0%, #0072ff 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        .input {
+            width: 90%;
+            margin: 10px 0;
+            padding: 12px;
+            border-radius: 8px;
+            border: 1px solid rgba(255,255,255,0.4);
+            font-size: 1.1rem;
+            background: rgba(255,255,255,0.1);
+            color: #fff;
+            transition: border 0.3s;
+        }
+        .input:focus {
+            outline: none;
+            border-color: #00c6ff;
+        }
+        .btn {
+            background: linear-gradient(90deg, #00c6ff 0%, #0072ff 100%);
+            color: #fff;
+            border: none;
+            border-radius: 12px;
+            padding: 14px 28px;
+            font-size: 1.1rem;
+            font-weight: 600;
+            margin: 10px 5px;
+            cursor: pointer;
+            box-shadow: 0 2px 8px rgba(0, 198, 255, 0.15);
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        .btn:hover {
+            transform: scale(1.05);
+            box-shadow: 0 4px 16px rgba(0, 198, 255, 0.25);
+        }
+        .btn.outline {
+            background: transparent;
+            border: 2px solid #00c6ff;
+            color: #00c6ff;
+            box-shadow: none;
+        }
+        .btn.outline:hover {
+            background: rgba(0, 198, 255, 0.1);
+        }
+        .status {
+            margin-top: 20px;
+            font-size: 1rem;
+            min-height: 28px;
+            font-weight: 500;
+            color: #00ffb3;
+            word-wrap: break-word;
+        }
+        #loggedInView {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <canvas class="background-glass"></canvas>
+    <div class="container" id="authBox">
+        <h1 id="headerTitle">Lumina-Auth</h1>
+        
+        <!-- Logged Out View -->
+        <div id="loggedOutView">
+            <form id="authForm" autocomplete="off" onsubmit="return false;">
+                <input type="text" id="username" placeholder="Username" class="input" required>
+                <input type="password" id="password" placeholder="Password" class="input" required>
+                <div style="margin-top:20px;">
+                    <button class="btn" onclick="loginUser()">Sign In</button>
+                    <button class="btn outline" onclick="registerUser()">Sign Up</button>
+                </div>
+            </form>
+        </div>
+
+        <!-- Logged In View -->
+        <div id="loggedInView">
+            <p>Welcome back! You are authenticated.</p>
+            <button class="btn" onclick="testProtected()">Test Session</button>
+            <button class="btn outline" onclick="logout()">Sign Out</button>
+        </div>
+
+        <div class="status" id="status"></div>
+    </div>
+
+    <script>
+        // Anim Background Engine
+        const canvas = document.querySelector('.background-glass');
+        function drawGlass() {
+            const ctx = canvas.getContext('2d');
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            for (let i = 0; i < 15; i++) {
+                const x = Math.sin(Date.now()/900 + i) * canvas.width/2 + canvas.width/2;
+                const y = Math.cos(Date.now()/1000 + i) * canvas.height/2 + canvas.height/2;
+                const r = 50 + 30 * Math.sin(Date.now()/1200 + i);
+                ctx.beginPath();
+                ctx.arc(x, y, r, 0, 2*Math.PI);
+                ctx.fillStyle = `rgba(${100+10*i},${180-8*i},255,0.06)`;
+                ctx.fill();
+            }
+            requestAnimationFrame(drawGlass);
+        }
+        drawGlass();
+        window.addEventListener('resize', () => { canvas.width = window.innerWidth; canvas.height = window.innerHeight; });
+
+        const statusDiv = document.getElementById('status');
+        
+        // Use relative path for production API calls since it is hosted by Flask
+        const API_URL = window.location.origin;
+
+        // UI State Switcher
+        function updateUI() {
+            const token = localStorage.getItem('jwt_token');
+            if (token) {
+                document.getElementById('loggedOutView').style.display = 'none';
+                document.getElementById('loggedInView').style.display = 'block';
+                document.getElementById('headerTitle').textContent = "Dashboard";
+            } else {
+                document.getElementById('loggedOutView').style.display = 'block';
+                document.getElementById('loggedInView').style.display = 'none';
+                document.getElementById('headerTitle').textContent = "Lumina-Auth";
+            }
+        }
+        // Run on start
+        updateUI();
+
+        function setStatus(msg, error=false) {
+            statusDiv.textContent = msg;
+            statusDiv.style.color = error ? '#ff3b3b' : '#00ffb3';
+        }
+
+        async function registerUser() {
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            setStatus("Registering...");
+            
+            try {
+                const response = await fetch(`${API_URL}/register`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password })
+                });
+                const data = await response.json();
+                setStatus(data.message, !data.success);
+            } catch (err) {
+                setStatus("Network or server error.", true);
+            }
+        }
+
+        async function loginUser() {
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            setStatus("Authenticating...");
+            
+            try {
+                const response = await fetch(`${API_URL}/login`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password })
+                });
+                const data = await response.json();
+                if (data.success && data.access_token) {
+                    localStorage.setItem('jwt_token', data.access_token);
+                    setStatus("Login successful!");
+                    setTimeout(() => { updateUI(); setStatus(""); }, 800);
+                } else {
+                    setStatus(data.message || "Login failed.", true);
+                }
+            } catch (err) {
+                setStatus("Network or server error.", true);
+            }
+        }
+
+        async function testProtected() {
+            const token = localStorage.getItem('jwt_token');
+            if (!token) return updateUI();
+            
+            setStatus("Verifying session...");
+            try {
+                const response = await fetch(`${API_URL}/protected`, {
+                    method: 'GET',
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                
+                if (response.status === 401 || response.status === 422) {
+                    // Token expired or invalid
+                    logout();
+                    return;
+                }
+                const data = await response.json();
+                setStatus(data.message, !data.success);
+            } catch (err) {
+                setStatus("Network error verifying session.", true);
+            }
+        }
+
+        function logout() {
+            localStorage.removeItem('jwt_token');
+            setStatus("Logged out.");
+            document.getElementById('username').value = '';
+            document.getElementById('password').value = '';
+            updateUI();
+        }
+    </script>
+</body>
+</html>
