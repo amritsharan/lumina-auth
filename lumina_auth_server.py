@@ -3,6 +3,7 @@ import secrets
 import hashlib
 import hmac
 import base64
+import re
 from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
@@ -27,6 +28,42 @@ client = MongoClient(app.config['MONGO_URI'])
 db = client.lumina_auth
 users_collection = db.users
 
+# --- PRE-REGISTRATION CLASSIFICATION ENGINE ---
+DISPOSABLE_EMAIL_DOMAINS = ["@10minutemail.com", "@mailinator.com", "@guerrillamail.com", "@temp-mail.org"]
+MALICIOUS_IPS = ["192.168.1.99", "10.0.0.50"] # Mock malicious IPs for demonstration
+ip_signup_tracker = {} # Mock rate limiting dictionary: { "ip_address": count }
+
+def is_disposable_email(username: str) -> bool:
+    for domain in DISPOSABLE_EMAIL_DOMAINS:
+        if domain in username.lower():
+            return True
+    return False
+
+def is_password_strong(password: str) -> tuple[bool, str]:
+    if len(password) < 8:
+        return False, "Password must be at least 8 characters long."
+    if not re.search(r"[A-Z]", password):
+        return False, "Password must contain at least one uppercase letter."
+    if not re.search(r"[a-z]", password):
+        return False, "Password must contain at least one lowercase letter."
+    if not re.search(r"\d", password):
+        return False, "Password must contain at least one number."
+    if not re.search(r"[!@#$%^&*(),.?\":{}|<>]", password):
+        return False, "Password must contain at least one special character."
+    return True, ""
+
+def is_malicious_ip(ip: str) -> bool:
+    return ip in MALICIOUS_IPS
+
+def has_exceeded_signup_rate(ip: str) -> bool:
+    MAX_SIGNUPS_PER_IP = 3
+    count = ip_signup_tracker.get(ip, 0)
+    if count >= MAX_SIGNUPS_PER_IP:
+        return True
+    ip_signup_tracker[ip] = count + 1
+    return False
+# ----------------------------------------------
+
 def create_digital_signature(password: str) -> str:
     """Converts a raw password into an HMAC-SHA256 Digital Signature representing it."""
     return hmac.new(PASSWORD_HMAC_KEY, password.encode('utf-8'), hashlib.sha256).hexdigest()
@@ -42,9 +79,35 @@ def register():
     username = data.get('username')
     password = data.get('password')
     public_key_hex = data.get('public_key') 
+    bot_check = data.get('bot_check')
+    user_ip = request.remote_addr
+
+    # --- PHASE 1: PRE-CREATION CLASSIFICATION ---
+    # Check 1: The Bot Trap (Honeypot)
+    if bot_check:
+        return jsonify({'success': False, 'message': 'Malicious activity detected.'}), 403
+        
+    # Check 2: Disposable/Burner Email Check
+    if username and is_disposable_email(username):
+        return jsonify({'success': False, 'message': 'Registration from temporary email providers is not allowed.'}), 400
+        
+    # Check 3: IP Reputation
+    if is_malicious_ip(user_ip):
+        return jsonify({'success': False, 'message': 'Your network has been flagged for suspicious activity.'}), 403
+        
+    # Check 4: Rate Limiting
+    if has_exceeded_signup_rate(user_ip):
+        return jsonify({'success': False, 'message': 'Too many signups from this IP. Try again later.'}), 429
+    # ----------------------------------------------
 
     if not username or not password:
         return jsonify({'success': False, 'message': 'Username and password required'}), 400
+        
+    # Check Password Strength
+    is_strong, msg = is_password_strong(password)
+    if not is_strong:
+        return jsonify({'success': False, 'message': msg}), 400
+        
     if users_collection.find_one({'username': username}):
         return jsonify({'success': False, 'message': 'Username already exists'}), 409
 
