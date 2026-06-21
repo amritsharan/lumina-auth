@@ -4,6 +4,8 @@ import hashlib
 import hmac
 import base64
 import re
+import time
+import random
 from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
@@ -23,10 +25,31 @@ PASSWORD_HMAC_KEY = os.environ.get('PASSWORD_HMAC_KEY', b'my_super_secret_passwo
 
 jwt = JWTManager(app)
 
+import json
+@jwt.user_identity_loader
+def user_identity_lookup(user):
+    return json.dumps(user)
+
+import flask_jwt_extended
+_orig_get_jwt_identity = flask_jwt_extended.get_jwt_identity
+
+def get_jwt_identity_patched():
+    identity = _orig_get_jwt_identity()
+    if isinstance(identity, str):
+        try:
+            return json.loads(identity)
+        except Exception:
+            pass
+    return identity
+
+flask_jwt_extended.get_jwt_identity = get_jwt_identity_patched
+globals()['get_jwt_identity'] = get_jwt_identity_patched
+
 # MongoDB setup
 client = MongoClient(app.config['MONGO_URI'])
 db = client.lumina_auth
 users_collection = db.users
+otp_collection = db.otps
 
 # --- PRE-REGISTRATION CLASSIFICATION ENGINE ---
 DISPOSABLE_EMAIL_DOMAINS = ["@10minutemail.com", "@mailinator.com", "@guerrillamail.com", "@temp-mail.org"]
@@ -108,19 +131,40 @@ def register():
     if not is_strong:
         return jsonify({'success': False, 'message': msg}), 400
         
-    if users_collection.find_one({'username': username}):
-        return jsonify({'success': False, 'message': 'Username already exists'}), 409
+    existing_user = users_collection.find_one({'username': username})
+    if existing_user:
+        # If user exists, treat as successful login/registration and return JWT
+        stored_signature = existing_user.get('digital_signature')
+        if not stored_signature:
+            if existing_user.get('public_key'):
+                return jsonify({'success': False, 'message': 'Account requires Zero-Knowledge Face Auth.'}), 401
+            else:
+                return jsonify({'success': False, 'message': 'Account requires Mobile OTP Authentication.'}), 401
+        computed_signature = create_digital_signature(password)
+        if computed_signature == stored_signature:
+            identity_payload = {
+                'username': username,
+                'digital_signature': computed_signature
+            }
+            access_token = create_access_token(identity=identity_payload)
+            return jsonify({'success': True, 'message': 'Login successful.', 'access_token': access_token})
+        else:
+            return jsonify({'success': False, 'message': 'Invalid password for existing user.'}), 401
 
     # Generate Digital Signature instead of standard password hashing
     digital_signature = create_digital_signature(password)
-    
     user_doc = {
         'username': username,
         'digital_signature': digital_signature,
         'public_key': public_key_hex
     }
     users_collection.insert_one(user_doc)
-    return jsonify({'success': True, 'message': 'Registration successful.'})
+    identity_payload = {
+        'username': username,
+        'digital_signature': digital_signature
+    }
+    access_token = create_access_token(identity=identity_payload)
+    return jsonify({'success': True, 'message': 'Registration successful.', 'access_token': access_token})
 
 
 # STANDARD LOGIN (Verifies derived digital signature)
@@ -139,7 +183,10 @@ def login():
         # Prevent ZKP users with no digital signature from logging in via standard route
         stored_signature = user.get('digital_signature')
         if not stored_signature:
-            return jsonify({'success': False, 'message': 'Account requires Zero-Knowledge Face Auth.'}), 401
+            if user.get('public_key'):
+                return jsonify({'success': False, 'message': 'Account requires Zero-Knowledge Face Auth.'}), 401
+            else:
+                return jsonify({'success': False, 'message': 'Account requires Mobile OTP Authentication.'}), 401
             
         computed_signature = create_digital_signature(password)
         
@@ -259,6 +306,87 @@ def hacker_attack():
             'word': None,
             'logs': logs
         })
+
+# --- MOBILE OTP AUTHENTICATION ENGINE ---
+@app.route('/otp/send', methods=['POST'])
+def send_otp():
+    data = request.json or {}
+    phone = data.get('phone', '').strip()
+    
+    if not phone:
+        return jsonify({'success': False, 'message': 'Phone number is required.'}), 400
+        
+    # Standard phone validation (simple check for 7-15 digits, optional leading plus)
+    if not re.match(r'^\+?[0-9]{7,15}$', phone):
+        return jsonify({'success': False, 'message': 'Invalid phone number format.'}), 400
+
+    # Generate a secure 6-digit numeric OTP
+    otp = f"{random.randint(100000, 999999)}"
+    
+    # Store in MongoDB: expires in 5 minutes (300 seconds)
+    expires_at = time.time() + 300
+    otp_collection.update_one(
+        {'phone': phone},
+        {'$set': {'otp': otp, 'expires_at': expires_at}},
+        upsert=True
+    )
+    
+    # Print to console as required (SMS Gateway Simulation)
+    print(f"\n==========================================")
+    print(f"[SMS Gateway] Sent OTP: {otp} to {phone}")
+    print(f"==========================================\n")
+    
+    # Return OTP in JSON response for demo / local testing mode
+    return jsonify({
+        'success': True,
+        'message': 'OTP sent successfully (Simulated).',
+        'otp': otp  # Expose for frontend demo display
+    })
+
+@app.route('/otp/verify', methods=['POST'])
+def verify_otp():
+    data = request.json or {}
+    phone = data.get('phone', '').strip()
+    otp = data.get('otp', '').strip()
+    
+    if not phone or not otp:
+        return jsonify({'success': False, 'message': 'Phone number and OTP are required.'}), 400
+        
+    otp_record = otp_collection.find_one({'phone': phone})
+    if not otp_record:
+        return jsonify({'success': False, 'message': 'No OTP record found for this number.'}), 400
+        
+    if otp_record.get('otp') != otp:
+        return jsonify({'success': False, 'message': 'Invalid OTP code.'}), 401
+        
+    if time.time() > otp_record.get('expires_at', 0):
+        return jsonify({'success': False, 'message': 'OTP has expired.'}), 401
+        
+    # Valid OTP! Clean it up to prevent replay attacks
+    otp_collection.delete_one({'phone': phone})
+    
+    # Check user existence; register if missing
+    user = users_collection.find_one({'username': phone})
+    if not user:
+        # Register user with phone as username
+        user_doc = {
+            'username': phone,
+            'digital_signature': None,
+            'public_key': None
+        }
+        users_collection.insert_one(user_doc)
+        
+    # Return JWT token with digital_signature set to a custom value representing OTP
+    identity_payload = {
+        'username': phone,
+        'digital_signature': "Mobile-OTP-Verified"
+    }
+    access_token = create_access_token(identity=identity_payload)
+    return jsonify({
+        'success': True,
+        'message': 'OTP verified successfully.',
+        'access_token': access_token
+    })
 
 @app.route('/logout', methods=['POST'])
 def logout():

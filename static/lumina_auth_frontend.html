@@ -114,6 +114,87 @@
             text-align: left;
             font-size: 0.9rem;
         }
+        .auth-tabs {
+            display: flex;
+            justify-content: center;
+            margin-bottom: 25px;
+            background: rgba(255, 255, 255, 0.06);
+            border-radius: 14px;
+            padding: 5px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            position: relative;
+        }
+        .tab-btn {
+            flex: 1;
+            background: transparent;
+            border: none;
+            color: rgba(255, 255, 255, 0.6);
+            padding: 12px 18px;
+            font-family: 'Montserrat', 'Roboto', sans-serif;
+            font-size: 0.95rem;
+            font-weight: 700;
+            cursor: pointer;
+            border-radius: 10px;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            letter-spacing: 0.5px;
+        }
+        .tab-btn.active {
+            background: linear-gradient(90deg, #00c6ff 0%, #0072ff 100%);
+            color: #fff;
+            box-shadow: 0 4px 20px rgba(0, 198, 255, 0.4);
+        }
+        .tab-btn:hover:not(.active) {
+            color: #fff;
+            background: rgba(255, 255, 255, 0.08);
+        }
+        .form-view {
+            transition: opacity 0.3s ease-in-out, transform 0.3s ease-in-out;
+        }
+        .form-view.hidden {
+            display: none;
+            opacity: 0;
+            transform: translateY(10px);
+        }
+        /* Sleek Toast Notification */
+        .toast-notify {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: rgba(15, 32, 39, 0.85);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(0, 255, 179, 0.3);
+            border-radius: 12px;
+            padding: 16px 24px;
+            box-shadow: 0 10px 30px rgba(0, 255, 179, 0.15);
+            z-index: 1000;
+            color: #fff;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            transform: translateY(100px);
+            opacity: 0;
+            transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+        .toast-notify.show {
+            transform: translateY(0);
+            opacity: 1;
+        }
+        .toast-code-badge {
+            background: rgba(0, 255, 179, 0.15);
+            color: #00ffb3;
+            font-family: monospace;
+            padding: 4px 8px;
+            border-radius: 6px;
+            border: 1px solid rgba(0, 255, 179, 0.3);
+            font-size: 1.1rem;
+            font-weight: 700;
+            letter-spacing: 1px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .toast-code-badge:hover {
+            background: rgba(0, 255, 179, 0.3);
+        }
     </style>
 </head>
 <body>
@@ -123,16 +204,41 @@
         
         <!-- Logged Out View -->
         <div id="loggedOutView">
-            <p style="font-size: 0.9rem; margin-bottom: 15px; color: rgba(255,255,255,0.8)">Enter your secure credentials to continue.</p>
-            <form id="authForm" autocomplete="off" onsubmit="authenticateUser(); return false;">
-                <input type="text" id="username" placeholder="Username" class="input" required>
-                <!-- HONEYPOT FIELD -->
-                <input type="text" id="bot_check" style="display:none" tabindex="-1" autocomplete="off">
-                <input type="password" id="password" placeholder="Password" class="input" required>
-                <div style="margin-top:20px;">
-                    <button type="submit" class="btn" style="width: 95%;">Authenticate (Login/Register)</button>
-                </div>
-            </form>
+            <div class="auth-tabs">
+                <button type="button" class="tab-btn active" id="tab-standard" onclick="switchTab('standard')">Standard Auth</button>
+                <button type="button" class="tab-btn" id="tab-otp" onclick="switchTab('otp')">Mobile OTP</button>
+            </div>
+
+            <!-- Standard Auth Form -->
+            <div id="standardAuthSection" class="form-view">
+                <p style="font-size: 0.9rem; margin-bottom: 15px; color: rgba(255,255,255,0.8)">Enter your secure credentials to continue.</p>
+                <form id="authForm" autocomplete="off" onsubmit="authenticateUser(); return false;">
+                    <input type="text" id="username" placeholder="Username" class="input" required>
+                    <!-- HONEYPOT FIELD -->
+                    <input type="text" id="bot_check" style="display:none" tabindex="-1" autocomplete="off">
+                    <input type="password" id="password" placeholder="Password" class="input" required>
+                    <div style="margin-top:20px;">
+                        <button type="submit" class="btn" style="width: 95%;">Authenticate (Login/Register)</button>
+                    </div>
+                </form>
+            </div>
+
+            <!-- Mobile OTP Form -->
+            <div id="otpAuthSection" class="form-view hidden">
+                <p style="font-size: 0.9rem; margin-bottom: 15px; color: rgba(255,255,255,0.8)">Enter your phone number to receive a secure OTP code.</p>
+                <form id="otpForm" autocomplete="off" onsubmit="verifyOTP(); return false;">
+                    <input type="tel" id="phoneNumber" placeholder="Mobile Number (e.g. +1234567890)" class="input" required>
+                    
+                    <div id="otpInputContainer" style="display: none; margin-top: 15px;">
+                        <input type="text" id="otpCode" placeholder="Enter 6-Digit OTP" class="input" maxlength="6" pattern="\d{6}">
+                    </div>
+
+                    <div style="margin-top:20px;">
+                        <button type="button" id="sendOtpBtn" class="btn" style="width: 95%;" onclick="sendOTP()">Send OTP</button>
+                        <button type="submit" id="verifyOtpBtn" class="btn" style="width: 95%; display: none;">Verify & Sign In</button>
+                    </div>
+                </form>
+            </div>
         </div>
 
         <!-- Logged In View -->
@@ -178,6 +284,15 @@
         <div class="status" id="status"></div>
     </div>
 
+    <!-- OTP Toast Notification -->
+    <div class="toast-notify" id="otpToast">
+        <span style="font-size: 1.5rem;">📱</span>
+        <div style="text-align: left;">
+            <span style="display: block; font-size: 0.8rem; color: rgba(255,255,255,0.7); margin-bottom: 2px;">Demo OTP Sent! Click code to copy:</span>
+            <span class="toast-code-badge" id="toastOtpCode" onclick="copyToastCode()">------</span>
+        </div>
+    </div>
+
     <script>
         // Anim Background Engine
         const canvas = document.querySelector('.background-glass');
@@ -206,6 +321,129 @@
         function setStatus(msg, error=true) {
             statusDiv.textContent = msg;
             statusDiv.style.color = error ? '#ff3b3b' : '#00ffb3';
+        }
+
+        let activeTab = "standard";
+
+        function switchTab(tab) {
+            activeTab = tab;
+            setStatus("");
+            
+            const standardTab = document.getElementById('tab-standard');
+            const otpTab = document.getElementById('tab-otp');
+            const standardSection = document.getElementById('standardAuthSection');
+            const otpSection = document.getElementById('otpAuthSection');
+            
+            if (tab === 'standard') {
+                standardTab.classList.add('active');
+                otpTab.classList.remove('active');
+                standardSection.classList.remove('hidden');
+                otpSection.classList.add('hidden');
+            } else {
+                otpTab.classList.add('active');
+                standardTab.classList.remove('active');
+                otpSection.classList.remove('hidden');
+                standardSection.classList.add('hidden');
+            }
+        }
+
+        async function sendOTP() {
+            const phone = document.getElementById('phoneNumber').value.trim();
+            if (!phone) {
+                setStatus("Please enter a mobile number first.", true);
+                return;
+            }
+            
+            setStatus("Sending OTP...", false);
+            const sendBtn = document.getElementById('sendOtpBtn');
+            const phoneInput = document.getElementById('phoneNumber');
+            
+            sendBtn.disabled = true;
+            phoneInput.disabled = true;
+            
+            try {
+                const response = await fetch(`${API_URL}/otp/send`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ phone })
+                });
+                const data = await response.json();
+                
+                if (data.success) {
+                    setStatus("OTP sent! Enter code to verify.", false);
+                    document.getElementById('otpInputContainer').style.display = 'block';
+                    document.getElementById('verifyOtpBtn').style.display = 'block';
+                    sendBtn.style.display = 'none';
+                    
+                    // Show demo toast notification
+                    const toast = document.getElementById('otpToast');
+                    const toastCode = document.getElementById('toastOtpCode');
+                    toastCode.textContent = data.otp;
+                    toast.classList.add('show');
+                    
+                    // Auto hide toast after 8 seconds
+                    setTimeout(() => {
+                        toast.classList.remove('show');
+                    }, 8000);
+                } else {
+                    setStatus(data.message || "Failed to send OTP.", true);
+                    sendBtn.disabled = false;
+                    phoneInput.disabled = false;
+                }
+            } catch (err) {
+                setStatus("Network error. Could not send OTP.", true);
+                sendBtn.disabled = false;
+                phoneInput.disabled = false;
+            }
+        }
+
+        async function verifyOTP() {
+            const phone = document.getElementById('phoneNumber').value.trim();
+            const otp = document.getElementById('otpCode').value.trim();
+            
+            if (!otp || otp.length !== 6) {
+                setStatus("Please enter a valid 6-digit OTP code.", true);
+                return;
+            }
+            
+            setStatus("Verifying OTP...", false);
+            
+            try {
+                const response = await fetch(`${API_URL}/otp/verify`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ phone, otp })
+                });
+                const data = await response.json();
+                
+                if (data.success && data.access_token) {
+                    localStorage.setItem('jwt_token', data.access_token);
+                    setStatus("OTP verified successfully!", false);
+                    
+                    // Hide the toast
+                    document.getElementById('otpToast').classList.remove('show');
+                    
+                    setTimeout(() => {
+                        updateUI();
+                        setStatus("");
+                    }, 800);
+                } else {
+                    setStatus(data.message || "Invalid or expired OTP.", true);
+                }
+            } catch (err) {
+                setStatus("Network or server error during verification.", true);
+            }
+        }
+
+        function copyToastCode() {
+            const toastCode = document.getElementById('toastOtpCode');
+            const originalVal = toastCode.textContent;
+            navigator.clipboard.writeText(originalVal).then(() => {
+                toastCode.textContent = "Copied!";
+                setTimeout(() => {
+                    toastCode.textContent = originalVal;
+                }, 1500);
+            });
         }
 
         async function fetchUserDetails() {
@@ -301,8 +539,20 @@
         function logout() {
             localStorage.removeItem('jwt_token');
             setStatus("Logged out.", false);
+            // Reset standard fields
             document.getElementById('username').value = '';
             document.getElementById('password').value = '';
+            // Reset OTP fields & components
+            document.getElementById('phoneNumber').value = '';
+            document.getElementById('phoneNumber').disabled = false;
+            document.getElementById('otpCode').value = '';
+            document.getElementById('otpInputContainer').style.display = 'none';
+            document.getElementById('sendOtpBtn').style.display = 'block';
+            document.getElementById('sendOtpBtn').disabled = false;
+            document.getElementById('verifyOtpBtn').style.display = 'none';
+            // Hide toast if visible
+            document.getElementById('otpToast').classList.remove('show');
+            // Reset hacker modules
             document.getElementById('hackerModule').style.display='none';
             document.getElementById('targetSig').textContent = "Signature loads here...";
             document.getElementById('hackerTerminal').innerHTML = "_ Terminal Ready";
