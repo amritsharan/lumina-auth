@@ -2,88 +2,83 @@ import requests
 
 SERVER_URL = "http://127.0.0.1:5000"
 
-def register(username, password):
-    resp = requests.post(f"{SERVER_URL}/register", json={"username": username, "password": password})
+def validate_credentials(username, password):
+    resp = requests.post(f"{SERVER_URL}/auth/validate-credentials", json={
+        "username": username,
+        "password": password
+    })
     return resp.json()
 
-def login(username, password):
-    resp = requests.post(f"{SERVER_URL}/login", json={"username": username, "password": password})
+def send_auth_otp(username, password, phone, action):
+    resp = requests.post(f"{SERVER_URL}/auth/send-otp", json={
+        "username": username,
+        "password": password,
+        "phone": phone,
+        "action": action
+    })
+    return resp.json()
+
+def verify_auth_otp(username, password, phone, otp, action):
+    resp = requests.post(f"{SERVER_URL}/auth/verify-otp", json={
+        "username": username,
+        "password": password,
+        "phone": phone,
+        "otp": otp,
+        "action": action
+    })
     return resp.json()
 
 def access_protected(token):
     resp = requests.get(f"{SERVER_URL}/protected", headers={"Authorization": f"Bearer {token}"})
     return resp.json()
 
-def upload_file(token, filepath):
-    with open(filepath, 'rb') as f:
-        files = {'file': f}
-        headers = {"Authorization": f"Bearer {token}"}
-        resp = requests.post(f"{SERVER_URL}/upload", headers=headers, files=files)
-    return resp.json()
-
-def download_file(token, file_id, save_path):
-    headers = {"Authorization": f"Bearer {token}"}
-    resp = requests.get(f"{SERVER_URL}/download/{file_id}", headers=headers)
-    if resp.status_code == 200:
-        with open(save_path, 'wb') as f:
-            f.write(resp.content)
-        return {"success": True, "message": f"Saved decrypted to {save_path}"}
-    try:
-        return resp.json()
-    except:
-        return {"success": False, "message": f"HTTP {resp.status_code}"}
-
-def send_otp(phone):
-    resp = requests.post(f"{SERVER_URL}/otp/send", json={"phone": phone})
-    return resp.json()
-
-def verify_otp(phone, otp):
-    resp = requests.post(f"{SERVER_URL}/otp/verify", json={"phone": phone, "otp": otp})
-    return resp.json()
-
 if __name__ == "__main__":
     print("Lumina-Auth Standard JWT & OTP Client")
-    print("1. Register (Password)")
-    print("2. Login (Password)")
-    print("3. Send OTP (Mobile)")
-    print("4. Verify OTP & Login (Mobile)")
+    print("1. Register (Standard Auth with Mobile OTP)")
+    print("2. Login (Standard Auth with Mobile OTP)")
     
-    choice = input("Enter choice (1-4): ").strip()
+    choice = input("Enter choice (1-2): ").strip()
     
     if choice in ("1", "2"):
-        username = input("Enter username: ")
-        password = input("Enter password: ")
+        action = "register" if choice == "1" else "login"
+        username = input("Enter username: ").strip()
+        password = input("Enter password: ").strip()
         
-        if choice == "1":
-            result = register(username, password)
-            print("Register result:", result)
-            if result.get("success"):
-                print("Registration successful! Automatically logging in...")
-                choice = "2" # Flow right into login
-                
-        if choice == "2":
-            result = login(username, password)
-            print("Login result:", result)
-            if result.get("success"):
-                print("Access Token Generated!")
-                token = result.get("access_token")
-                print("Trying to access protected route with token:")
-                prot = access_protected(token)
-                print(prot)
-    elif choice == "3":
-        phone = input("Enter mobile number (e.g. +1234567890): ").strip()
-        result = send_otp(phone)
-        print("Send OTP result:", result)
-    elif choice == "4":
-        phone = input("Enter mobile number (e.g. +1234567890): ").strip()
-        otp = input("Enter 6-digit OTP code: ").strip()
-        result = verify_otp(phone, otp)
-        print("Verify OTP result:", result)
-        if result.get("success"):
-            print("Access Token Generated!")
-            token = result.get("access_token")
-            print("Trying to access protected route with token:")
-            prot = access_protected(token)
-            print(prot)
+        # Step 1: Validate credentials
+        print(f"\nStep 1: Validating credentials for {action}...")
+        val_res = validate_credentials(username, password)
+        if not val_res.get("success"):
+            print("Validation failed:", val_res.get("message"))
+            exit(1)
+            
+        print("Credentials valid!")
+        
+        # Step 2: Request mobile number and trigger OTP
+        phone = input("\nEnter mobile number with country code (e.g. +1234567890): ").strip()
+        print("Step 2: Sending OTP to phone number...")
+        send_res = send_auth_otp(username, password, phone, action)
+        if not send_res.get("success"):
+            print("Failed to send OTP:", send_res.get("message"))
+            exit(1)
+            
+        # OTP code display removed for security
+            
+        print("OTP triggered successfully via SMS!")
+        
+        # Step 3: Enter and verify OTP
+        otp = input("\nEnter 6-digit OTP code received: ").strip()
+        print("Step 3: Verifying OTP...")
+        verify_res = verify_auth_otp(username, password, phone, otp, action)
+        if not verify_res.get("success"):
+            print("Verification failed:", verify_res.get("message"))
+            exit(1)
+            
+        print("\nAuthentication successful!")
+        token = verify_res.get("access_token")
+        print("Access Token:", token)
+        
+        print("\nAccessing protected route with token:")
+        prot = access_protected(token)
+        print(prot)
     else:
         print("Invalid choice.")

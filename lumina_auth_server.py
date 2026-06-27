@@ -1,4 +1,6 @@
 import os
+from dotenv import load_dotenv
+load_dotenv()
 import secrets
 import hashlib
 import hmac
@@ -22,6 +24,8 @@ app.config['MONGO_URI'] = os.environ.get('MONGO_URI', 'mongodb://localhost:27017
 
 # Secret Key to derive digital signatures for passwords securely
 PASSWORD_HMAC_KEY = os.environ.get('PASSWORD_HMAC_KEY', b'my_super_secret_password_signature_key')
+if isinstance(PASSWORD_HMAC_KEY, str):
+    PASSWORD_HMAC_KEY = PASSWORD_HMAC_KEY.encode('utf-8')
 
 jwt = JWTManager(app)
 
@@ -308,6 +312,56 @@ def hacker_attack():
         })
 
 # --- MOBILE OTP AUTHENTICATION ENGINE ---
+def send_sms(phone: str, otp: str) -> dict:
+    """Sends OTP via Twilio if credentials are set, falls back to Textbelt, and then logs/returns mock."""
+    twilio_sid = os.environ.get('TWILIO_ACCOUNT_SID')
+    twilio_token = os.environ.get('TWILIO_AUTH_TOKEN')
+    twilio_phone = os.environ.get('TWILIO_PHONE_NUMBER')
+    
+    message_body = f"Your Lumina Auth OTP code is: {otp}. It expires in 5 minutes."
+    
+    # 1. Try Twilio
+    if twilio_sid and twilio_token and twilio_phone:
+        try:
+            from twilio.rest import Client
+            client = Client(twilio_sid, twilio_token)
+            message = client.messages.create(
+                body=message_body,
+                from_=twilio_phone,
+                to=phone
+            )
+            print(f"\n==========================================")
+            print(f"[SMS Gateway via Twilio] Sent OTP message SID: {message.sid}")
+            print(f"==========================================\n")
+            return {'success': True, 'gateway': 'twilio', 'sid': message.sid}
+        except Exception as e:
+            print(f"[SMS Gateway via Twilio] Error: {e}")
+            
+    # 2. Try Textbelt (Free fallback)
+    try:
+        import requests
+        resp = requests.post('https://textbelt.com/text', data={
+            'phone': phone,
+            'message': message_body,
+            'key': 'textbelt'
+        }, timeout=8)
+        res_json = resp.json()
+        if res_json.get('success'):
+            print(f"\n==========================================")
+            print(f"[SMS Gateway via Textbelt] Sent OTP to {phone}")
+            print(f"==========================================\n")
+            return {'success': True, 'gateway': 'textbelt'}
+        else:
+            print(f"[SMS Gateway via Textbelt] Failed: {res_json.get('error')}")
+    except Exception as e:
+        print(f"[SMS Gateway via Textbelt] Error: {e}")
+        
+    # 3. Fallback print
+    print(f"\n==========================================")
+    print(f"[SMS Gateway Console Fallback] Sent OTP: {otp} to {phone}")
+    print(f"==========================================\n")
+    return {'success': False, 'gateway': 'mock'}
+
 @app.route('/otp/send', methods=['POST'])
 def send_otp():
     data = request.json or {}
@@ -331,16 +385,14 @@ def send_otp():
         upsert=True
     )
     
-    # Print to console as required (SMS Gateway Simulation)
-    print(f"\n==========================================")
-    print(f"[SMS Gateway] Sent OTP: {otp} to {phone}")
-    print(f"==========================================\n")
+    # Send actual SMS
+    sms_res = send_sms(phone, otp)
     
-    # Return OTP in JSON response for demo / local testing mode
+    # Return response without exposing OTP code
     return jsonify({
         'success': True,
-        'message': 'OTP sent successfully (Simulated).',
-        'otp': otp  # Expose for frontend demo display
+        'message': 'OTP sent successfully.',
+        'gateway': sms_res['gateway']
     })
 
 @app.route('/otp/verify', methods=['POST'])
@@ -385,6 +437,185 @@ def verify_otp():
     return jsonify({
         'success': True,
         'message': 'OTP verified successfully.',
+        'access_token': access_token
+    })
+
+# --- STANDARD MULTI-STEP AUTHENTICATION FLOW ENDPOINTS ---
+@app.route('/auth/validate-credentials', methods=['POST'])
+def validate_credentials():
+    data = request.json or {}
+    username = data.get('username', '').strip()
+    password = data.get('password', '').strip()
+    bot_check = data.get('bot_check')
+    user_ip = request.remote_addr
+
+    # Bot trap (honeypot)
+    if bot_check:
+        return jsonify({'success': False, 'message': 'Malicious activity detected.'}), 403
+        
+    # Username/password verification
+    if not username or not password:
+        return jsonify({'success': False, 'message': 'Username and password required.'}), 400
+
+    existing_user = users_collection.find_one({'username': username})
+    if existing_user:
+        # User exists, check standard password
+        stored_signature = existing_user.get('digital_signature')
+        if not stored_signature:
+            if existing_user.get('public_key'):
+                return jsonify({'success': False, 'message': 'Account requires Zero-Knowledge Face Auth.'}), 401
+            else:
+                return jsonify({'success': False, 'message': 'Account requires Mobile OTP Authentication.'}), 401
+        
+        computed_signature = create_digital_signature(password)
+        if computed_signature != stored_signature:
+            return jsonify({'success': False, 'message': 'Invalid username or password.'}), 401
+            
+        return jsonify({'success': True, 'action': 'login', 'message': 'Credentials verified.'})
+    else:
+        # Registration check
+        # Check Disposable/Burner Email
+        if is_disposable_email(username):
+            return jsonify({'success': False, 'message': 'Registration from temporary email providers is not allowed.'}), 400
+            
+        # Check IP Reputation
+        if is_malicious_ip(user_ip):
+            return jsonify({'success': False, 'message': 'Your network has been flagged for suspicious activity.'}), 403
+            
+        # Check Rate Limiting
+        if has_exceeded_signup_rate(user_ip):
+            return jsonify({'success': False, 'message': 'Too many signups from this IP. Try again later.'}), 429
+
+        # Check Password Strength
+        is_strong, msg = is_password_strong(password)
+        if not is_strong:
+            return jsonify({'success': False, 'message': msg}), 400
+            
+        return jsonify({'success': True, 'action': 'register', 'message': 'Username available and credentials valid.'})
+
+@app.route('/auth/send-otp', methods=['POST'])
+def auth_send_otp():
+    data = request.json or {}
+    username = data.get('username', '').strip()
+    password = data.get('password', '').strip()
+    phone = data.get('phone', '').strip()
+    action = data.get('action', '').strip() # 'login' or 'register'
+    
+    if not username or not password or not phone or not action:
+        return jsonify({'success': False, 'message': 'All fields are required.'}), 400
+        
+    # Standard phone validation (simple check for 7-15 digits, optional leading plus)
+    if not re.match(r'^\+?[0-9]{7,15}$', phone):
+        return jsonify({'success': False, 'message': 'Invalid phone number format.'}), 400
+
+    existing_user = users_collection.find_one({'username': username})
+    
+    # Extra check for login action to verify password and phone number
+    if action == 'login':
+        if not existing_user:
+            return jsonify({'success': False, 'message': 'User not found.'}), 404
+        computed_signature = create_digital_signature(password)
+        if computed_signature != existing_user.get('digital_signature'):
+            return jsonify({'success': False, 'message': 'Invalid credentials.'}), 401
+            
+        # Verify phone number matches (if they have one registered)
+        registered_phone = existing_user.get('phone')
+        if registered_phone and registered_phone != phone:
+            return jsonify({'success': False, 'message': 'Entered phone number does not match registered phone number.'}), 400
+    elif action == 'register':
+        if existing_user:
+            return jsonify({'success': False, 'message': 'Username already taken.'}), 400
+            
+        # Verify password strength
+        is_strong, msg = is_password_strong(password)
+        if not is_strong:
+            return jsonify({'success': False, 'message': msg}), 400
+
+    # Generate a secure 6-digit numeric OTP
+    otp = f"{random.randint(100000, 999999)}"
+    expires_at = time.time() + 300 # 5 minutes
+    
+    otp_collection.update_one(
+        {'phone': phone},
+        {'$set': {'otp': otp, 'expires_at': expires_at}},
+        upsert=True
+    )
+    
+    # Send SMS via our multi-gateway helper
+    sms_res = send_sms(phone, otp)
+    
+    return jsonify({
+        'success': True,
+        'message': 'OTP sent successfully via SMS.',
+        'gateway': sms_res['gateway']
+    })
+
+@app.route('/auth/verify-otp', methods=['POST'])
+def auth_verify_otp():
+    data = request.json or {}
+    username = data.get('username', '').strip()
+    password = data.get('password', '').strip()
+    phone = data.get('phone', '').strip()
+    otp = data.get('otp', '').strip()
+    action = data.get('action', '').strip()
+    
+    if not username or not password or not phone or not otp or not action:
+        return jsonify({'success': False, 'message': 'All fields are required.'}), 400
+        
+    # Check OTP record
+    otp_record = otp_collection.find_one({'phone': phone})
+    if not otp_record:
+        return jsonify({'success': False, 'message': 'No OTP record found.'}), 400
+        
+    if otp_record.get('otp') != otp:
+        return jsonify({'success': False, 'message': 'Invalid OTP code.'}), 401
+        
+    if time.time() > otp_record.get('expires_at', 0):
+        return jsonify({'success': False, 'message': 'OTP has expired.'}), 401
+        
+    # Valid OTP! Clean up
+    otp_collection.delete_one({'phone': phone})
+    
+    # Verify/Complete credentials action
+    if action == 'register':
+        existing_user = users_collection.find_one({'username': username})
+        if existing_user:
+            return jsonify({'success': False, 'message': 'Username already taken.'}), 400
+            
+        digital_signature = create_digital_signature(password)
+        user_doc = {
+            'username': username,
+            'digital_signature': digital_signature,
+            'phone': phone,
+            'public_key': None
+        }
+        users_collection.insert_one(user_doc)
+        
+    elif action == 'login':
+        user = users_collection.find_one({'username': username})
+        if not user:
+            return jsonify({'success': False, 'message': 'User not found.'}), 404
+            
+        computed_signature = create_digital_signature(password)
+        if computed_signature != user.get('digital_signature'):
+            return jsonify({'success': False, 'message': 'Invalid credentials.'}), 401
+            
+        # Save phone number if they are a legacy user without phone number registered
+        if not user.get('phone'):
+            users_collection.update_one({'username': username}, {'$set': {'phone': phone}})
+        elif user.get('phone') != phone:
+            return jsonify({'success': False, 'message': 'Phone number mismatch.'}), 400
+            
+    # Generate JWT
+    computed_signature = create_digital_signature(password)
+    identity_payload = {
+        'username': username,
+        'digital_signature': computed_signature
+    }
+    access_token = create_access_token(identity=identity_payload)
+    return jsonify({
+        'success': True,
+        'message': 'Authentication successful.',
         'access_token': access_token
     })
 

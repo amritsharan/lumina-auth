@@ -204,40 +204,48 @@
         
         <!-- Logged Out View -->
         <div id="loggedOutView">
-            <div class="auth-tabs">
-                <button type="button" class="tab-btn active" id="tab-standard" onclick="switchTab('standard')">Standard Auth</button>
-                <button type="button" class="tab-btn" id="tab-otp" onclick="switchTab('otp')">Mobile OTP</button>
-            </div>
-
             <!-- Standard Auth Form -->
             <div id="standardAuthSection" class="form-view">
-                <p style="font-size: 0.9rem; margin-bottom: 15px; color: rgba(255,255,255,0.8)">Enter your secure credentials to continue.</p>
-                <form id="authForm" autocomplete="off" onsubmit="authenticateUser(); return false;">
-                    <input type="text" id="username" placeholder="Username" class="input" required>
-                    <!-- HONEYPOT FIELD -->
-                    <input type="text" id="bot_check" style="display:none" tabindex="-1" autocomplete="off">
-                    <input type="password" id="password" placeholder="Password" class="input" required>
-                    <div style="margin-top:20px;">
-                        <button type="submit" class="btn" style="width: 95%;">Authenticate (Login/Register)</button>
-                    </div>
-                </form>
-            </div>
+                <!-- STEP 1: CREDENTIALS -->
+                <div id="step-credentials">
+                    <p style="font-size: 0.9rem; margin-bottom: 15px; color: rgba(255,255,255,0.8)">Enter your secure credentials to continue.</p>
+                    <form id="authForm" autocomplete="off" onsubmit="handleCredentialsSubmit(); return false;">
+                        <input type="text" id="username" placeholder="Username" class="input" required>
+                        <!-- HONEYPOT FIELD -->
+                        <input type="text" id="bot_check" style="display:none" tabindex="-1" autocomplete="off">
+                        <input type="password" id="password" placeholder="Password" class="input" required>
+                        <div style="margin-top:20px;">
+                            <button type="submit" class="btn" style="width: 95%;">Continue</button>
+                        </div>
+                    </form>
+                </div>
 
-            <!-- Mobile OTP Form -->
-            <div id="otpAuthSection" class="form-view hidden">
-                <p style="font-size: 0.9rem; margin-bottom: 15px; color: rgba(255,255,255,0.8)">Enter your phone number to receive a secure OTP code.</p>
-                <form id="otpForm" autocomplete="off" onsubmit="verifyOTP(); return false;">
-                    <input type="tel" id="phoneNumber" placeholder="Mobile Number (e.g. +1234567890)" class="input" required>
-                    
-                    <div id="otpInputContainer" style="display: none; margin-top: 15px;">
-                        <input type="text" id="otpCode" placeholder="Enter 6-Digit OTP" class="input" maxlength="6" pattern="\d{6}">
-                    </div>
+                <!-- STEP 2: PHONE NUMBER -->
+                <div id="step-phone" style="display: none;">
+                    <p id="phone-instructions" style="font-size: 0.9rem; margin-bottom: 15px; color: rgba(255,255,255,0.8)">Verify your identity. Select your country and enter your mobile number.</p>
+                    <form id="phoneForm" autocomplete="off" onsubmit="handlePhoneSubmit(); return false;">
+                        <div class="phone-input-group" style="display: flex; gap: 8px; width: 95%; margin: 10px auto;">
+                            <select id="countryCodeSelect" class="input" style="flex: 1.2; min-width: 120px; font-size: 0.9rem; padding: 12px 6px; background: rgba(0,0,0,0.5); color: white; border: 1px solid rgba(255,255,255,0.4); border-radius: 8px;">
+                                <!-- Javascript will populate this -->
+                            </select>
+                            <input type="tel" id="phoneNumber" placeholder="Phone Number" class="input" style="flex: 2; margin: 0;" required>
+                        </div>
+                        <div style="margin-top:20px;">
+                            <button type="submit" id="sendOtpBtn" class="btn" style="width: 95%;">Send OTP via SMS</button>
+                        </div>
+                    </form>
+                </div>
 
-                    <div style="margin-top:20px;">
-                        <button type="button" id="sendOtpBtn" class="btn" style="width: 95%;" onclick="sendOTP()">Send OTP</button>
-                        <button type="submit" id="verifyOtpBtn" class="btn" style="width: 95%; display: none;">Verify & Sign In</button>
-                    </div>
-                </form>
+                <!-- STEP 3: OTP VERIFICATION -->
+                <div id="step-otp" style="display: none;">
+                    <p style="font-size: 0.9rem; margin-bottom: 15px; color: rgba(255,255,255,0.8)">Enter the 6-digit OTP code sent to your mobile number.</p>
+                    <form id="otpForm" autocomplete="off" onsubmit="handleOtpSubmit(); return false;">
+                        <input type="text" id="otpCode" placeholder="Enter 6-Digit OTP" class="input" maxlength="6" pattern="\d{6}" style="width: 90%; text-align: center; font-size: 1.3rem; letter-spacing: 4px;" required>
+                        <div style="margin-top:20px;">
+                            <button type="submit" id="verifyOtpBtn" class="btn" style="width: 95%;">Verify & Authenticate</button>
+                        </div>
+                    </form>
+                </div>
             </div>
         </div>
 
@@ -288,8 +296,8 @@
     <div class="toast-notify" id="otpToast">
         <span style="font-size: 1.5rem;">📱</span>
         <div style="text-align: left;">
-            <span style="display: block; font-size: 0.8rem; color: rgba(255,255,255,0.7); margin-bottom: 2px;">Demo OTP Sent! Click code to copy:</span>
-            <span class="toast-code-badge" id="toastOtpCode" onclick="copyToastCode()">------</span>
+            <span style="display: block; font-size: 0.9rem; font-weight: bold; margin-bottom: 2px; color: #00ffb3;">OTP Sent!</span>
+            <span style="display: block; font-size: 0.8rem; color: rgba(255,255,255,0.75);">Please check your mobile phone for the verification code.</span>
         </div>
     </div>
 
@@ -323,83 +331,311 @@
             statusDiv.style.color = error ? '#ff3b3b' : '#00ffb3';
         }
 
-        let activeTab = "standard";
+        let authAction = "login"; // 'login' or 'register'
 
-        function switchTab(tab) {
-            activeTab = tab;
-            setStatus("");
+        const countries = [
+            { name: "Afghanistan", code: "+93" },
+            { name: "Albania", code: "+355" },
+            { name: "Algeria", code: "+213" },
+            { name: "Andorra", code: "+376" },
+            { name: "Angola", code: "+244" },
+            { name: "Antigua and Barbuda", code: "+1" },
+            { name: "Argentina", code: "+54" },
+            { name: "Armenia", code: "+374" },
+            { name: "Australia", code: "+61" },
+            { name: "Austria", code: "+43" },
+            { name: "Azerbaijan", code: "+994" },
+            { name: "Bahamas", code: "+1" },
+            { name: "Bahrain", code: "+973" },
+            { name: "Bangladesh", code: "+880" },
+            { name: "Barbados", code: "+1" },
+            { name: "Belarus", code: "+375" },
+            { name: "Belgium", code: "+32" },
+            { name: "Belize", code: "+501" },
+            { name: "Benin", code: "+229" },
+            { name: "Bhutan", code: "+975" },
+            { name: "Bolivia", code: "+591" },
+            { name: "Bosnia and Herzegovina", code: "+387" },
+            { name: "Botswana", code: "+267" },
+            { name: "Brazil", code: "+55" },
+            { name: "Brunei", code: "+673" },
+            { name: "Bulgaria", code: "+359" },
+            { name: "Burkina Faso", code: "+226" },
+            { name: "Burundi", code: "+257" },
+            { name: "Cambodia", code: "+855" },
+            { name: "Cameroon", code: "+237" },
+            { name: "Canada", code: "+1" },
+            { name: "Cape Verde", code: "+238" },
+            { name: "Central African Republic", code: "+236" },
+            { name: "Chad", code: "+235" },
+            { name: "Chile", code: "+56" },
+            { name: "China", code: "+86" },
+            { name: "Colombia", code: "+57" },
+            { name: "Comoros", code: "+269" },
+            { name: "Congo", code: "+242" },
+            { name: "Costa Rica", code: "+506" },
+            { name: "Croatia", code: "+385" },
+            { name: "Cuba", code: "+53" },
+            { name: "Cyprus", code: "+357" },
+            { name: "Czech Republic", code: "+420" },
+            { name: "Denmark", code: "+45" },
+            { name: "Djibouti", code: "+253" },
+            { name: "Dominica", code: "+1" },
+            { name: "Dominican Republic", code: "+1" },
+            { name: "Ecuador", code: "+593" },
+            { name: "Egypt", code: "+20" },
+            { name: "El Salvador", code: "+503" },
+            { name: "Equatorial Guinea", code: "+240" },
+            { name: "Eritrea", code: "+291" },
+            { name: "Estonia", code: "+372" },
+            { name: "Ethiopia", code: "+251" },
+            { name: "Fiji", code: "+679" },
+            { name: "Finland", code: "+358" },
+            { name: "France", code: "+33" },
+            { name: "Gabon", code: "+241" },
+            { name: "Gambia", code: "+220" },
+            { name: "Georgia", code: "+995" },
+            { name: "Germany", code: "+49" },
+            { name: "Ghana", code: "+233" },
+            { name: "Greece", code: "+30" },
+            { name: "Grenada", code: "+1" },
+            { name: "Guatemala", code: "+502" },
+            { name: "Guinea", code: "+224" },
+            { name: "Guinea-Bissau", code: "+245" },
+            { name: "Guyana", code: "+592" },
+            { name: "Haiti", code: "+509" },
+            { name: "Honduras", code: "+504" },
+            { name: "Hungary", code: "+36" },
+            { name: "Iceland", code: "+354" },
+            { name: "India", code: "+91" },
+            { name: "Indonesia", code: "+62" },
+            { name: "Iran", code: "+98" },
+            { name: "Iraq", code: "+964" },
+            { name: "Ireland", code: "+353" },
+            { name: "Israel", code: "+972" },
+            { name: "Italy", code: "+39" },
+            { name: "Jamaica", code: "+1" },
+            { name: "Japan", code: "+81" },
+            { name: "Jordan", code: "+962" },
+            { name: "Kazakhstan", code: "+7" },
+            { name: "Kenya", code: "+254" },
+            { name: "Kiribati", code: "+686" },
+            { name: "Korea, North", code: "+850" },
+            { name: "Korea, South", code: "+82" },
+            { name: "Kuwait", code: "+965" },
+            { name: "Kyrgyzstan", code: "+996" },
+            { name: "Laos", code: "+856" },
+            { name: "Latvia", code: "+371" },
+            { name: "Lebanon", code: "+961" },
+            { name: "Lesotho", code: "+266" },
+            { name: "Liberia", code: "+231" },
+            { name: "Libya", code: "+218" },
+            { name: "Liechtenstein", code: "+423" },
+            { name: "Lithuania", code: "+370" },
+            { name: "Luxembourg", code: "+352" },
+            { name: "Madagascar", code: "+261" },
+            { name: "Malawi", code: "+265" },
+            { name: "Malaysia", code: "+60" },
+            { name: "Maldives", code: "+960" },
+            { name: "Mali", code: "+223" },
+            { name: "Malta", code: "+356" },
+            { name: "Marshall Islands", code: "+692" },
+            { name: "Mauritania", code: "+222" },
+            { name: "Mauritius", code: "+230" },
+            { name: "Mexico", code: "+52" },
+            { name: "Micronesia", code: "+691" },
+            { name: "Moldova", code: "+373" },
+            { name: "Monaco", code: "+377" },
+            { name: "Mongolia", code: "+976" },
+            { name: "Montenegro", code: "+382" },
+            { name: "Morocco", code: "+212" },
+            { name: "Mozambique", code: "+258" },
+            { name: "Myanmar", code: "+95" },
+            { name: "Namibia", code: "+264" },
+            { name: "Nauru", code: "+674" },
+            { name: "Nepal", code: "+977" },
+            { name: "Netherlands", code: "+31" },
+            { name: "New Zealand", code: "+64" },
+            { name: "Nicaragua", code: "+505" },
+            { name: "Niger", code: "+227" },
+            { name: "Nigeria", code: "+234" },
+            { name: "Norway", code: "+47" },
+            { name: "Oman", code: "+968" },
+            { name: "Pakistan", code: "+92" },
+            { name: "Palau", code: "+680" },
+            { name: "Panama", code: "+507" },
+            { name: "Papua New Guinea", code: "+675" },
+            { name: "Paraguay", code: "+595" },
+            { name: "Peru", code: "+51" },
+            { name: "Philippines", code: "+63" },
+            { name: "Poland", code: "+48" },
+            { name: "Portugal", code: "+351" },
+            { name: "Qatar", code: "+974" },
+            { name: "Romania", code: "+40" },
+            { name: "Russia", code: "+7" },
+            { name: "Rwanda", code: "+250" },
+            { name: "Saint Kitts and Nevis", code: "+1" },
+            { name: "Saint Lucia", code: "+1" },
+            { name: "Saint Vincent and the Grenadines", code: "+1" },
+            { name: "Samoa", code: "+685" },
+            { name: "San Marino", code: "+378" },
+            { name: "Sao Tome and Principe", code: "+239" },
+            { name: "Saudi Arabia", code: "+966" },
+            { name: "Senegal", code: "+221" },
+            { name: "Serbia", code: "+381" },
+            { name: "Seychelles", code: "+248" },
+            { name: "Sierra Leone", code: "+232" },
+            { name: "Singapore", code: "+65" },
+            { name: "Slovakia", code: "+421" },
+            { name: "Slovenia", code: "+386" },
+            { name: "Solomon Islands", code: "+677" },
+            { name: "Somalia", code: "+252" },
+            { name: "South Africa", code: "+27" },
+            { name: "Spain", code: "+34" },
+            { name: "Sri Lanka", code: "+94" },
+            { name: "Sudan", code: "+249" },
+            { name: "Suriname", code: "+597" },
+            { name: "Swaziland", code: "+268" },
+            { name: "Sweden", code: "+46" },
+            { name: "Switzerland", code: "+41" },
+            { name: "Syria", code: "+963" },
+            { name: "Taiwan", code: "+886" },
+            { name: "Tajikistan", code: "+992" },
+            { name: "Tanzania", code: "+255" },
+            { name: "Thailand", code: "+66" },
+            { name: "Togo", code: "+228" },
+            { name: "Tonga", code: "+676" },
+            { name: "Trinidad and Tobago", code: "+1" },
+            { name: "Tunisia", code: "+216" },
+            { name: "Turkey", code: "+90" },
+            { name: "Turkmenistan", code: "+993" },
+            { name: "Tuvalu", code: "+688" },
+            { name: "Uganda", code: "+256" },
+            { name: "Ukraine", code: "+380" },
+            { name: "United Arab Emirates", code: "+971" },
+            { name: "United Kingdom", code: "+44" },
+            { name: "United States", code: "+1" },
+            { name: "Uruguay", code: "+598" },
+            { name: "Uzbekistan", code: "+998" },
+            { name: "Vanuatu", code: "+678" },
+            { name: "Venezuela", code: "+58" },
+            { name: "Vietnam", code: "+84" },
+            { name: "Yemen", code: "+967" },
+            { name: "Zambia", code: "+260" },
+            { name: "Zimbabwe", code: "+263" }
+        ];
+
+        function populateCountryCodes() {
+            const select = document.getElementById('countryCodeSelect');
+            if (!select) return;
+            select.innerHTML = '';
             
-            const standardTab = document.getElementById('tab-standard');
-            const otpTab = document.getElementById('tab-otp');
-            const standardSection = document.getElementById('standardAuthSection');
-            const otpSection = document.getElementById('otpAuthSection');
+            // Sort countries alphabetically
+            countries.sort((a, b) => a.name.localeCompare(b.name));
             
-            if (tab === 'standard') {
-                standardTab.classList.add('active');
-                otpTab.classList.remove('active');
-                standardSection.classList.remove('hidden');
-                otpSection.classList.add('hidden');
-            } else {
-                otpTab.classList.add('active');
-                standardTab.classList.remove('active');
-                otpSection.classList.remove('hidden');
-                standardSection.classList.add('hidden');
-            }
+            countries.forEach(c => {
+                const opt = document.createElement('option');
+                opt.value = c.code;
+                opt.textContent = `${c.name} (${c.code})`;
+                if (c.name === "United States") {
+                    opt.selected = true;
+                }
+                select.appendChild(opt);
+            });
         }
 
-        async function sendOTP() {
-            const phone = document.getElementById('phoneNumber').value.trim();
-            if (!phone) {
-                setStatus("Please enter a mobile number first.", true);
-                return;
-            }
+        async function handleCredentialsSubmit() {
+            const username = document.getElementById('username').value.trim();
+            const password = document.getElementById('password').value;
+            const bot_check = document.getElementById('bot_check').value;
             
-            setStatus("Sending OTP...", false);
-            const sendBtn = document.getElementById('sendOtpBtn');
-            const phoneInput = document.getElementById('phoneNumber');
-            
-            sendBtn.disabled = true;
-            phoneInput.disabled = true;
+            setStatus("Verifying credentials...", false);
             
             try {
-                const response = await fetch(`${API_URL}/otp/send`, {
+                const response = await fetch(`${API_URL}/auth/validate-credentials`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ phone })
+                    body: JSON.stringify({ username, password, bot_check })
                 });
                 const data = await response.json();
                 
                 if (data.success) {
-                    setStatus("OTP sent! Enter code to verify.", false);
-                    document.getElementById('otpInputContainer').style.display = 'block';
-                    document.getElementById('verifyOtpBtn').style.display = 'block';
-                    sendBtn.style.display = 'none';
+                    authAction = data.action; // 'login' or 'register'
+                    setStatus("", false);
                     
-                    // Show demo toast notification
+                    // Transition to step 2
+                    document.getElementById('step-credentials').style.display = 'none';
+                    document.getElementById('step-phone').style.display = 'block';
+                    
+                    if (authAction === 'register') {
+                        document.getElementById('phone-instructions').textContent = "Set up your registered mobile number for standard authentication.";
+                    } else {
+                        document.getElementById('phone-instructions').textContent = "Enter your registered mobile number to receive a secure OTP.";
+                    }
+                } else {
+                    setStatus(data.message || "Credential verification failed.", true);
+                }
+            } catch (err) {
+                setStatus("Network error during credential verification.", true);
+            }
+        }
+
+        async function handlePhoneSubmit() {
+            const username = document.getElementById('username').value.trim();
+            const password = document.getElementById('password').value;
+            const countryCode = document.getElementById('countryCodeSelect').value;
+            const phoneRest = document.getElementById('phoneNumber').value.trim();
+            
+            if (!phoneRest) {
+                setStatus("Please enter a mobile number.", true);
+                return;
+            }
+            
+            const phone = countryCode + phoneRest;
+            setStatus("Sending OTP...", false);
+            
+            const sendBtn = document.getElementById('sendOtpBtn');
+            sendBtn.disabled = true;
+            
+            try {
+                const response = await fetch(`${API_URL}/auth/send-otp`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password, phone, action: authAction })
+                });
+                const data = await response.json();
+                
+                if (data.success) {
+                    setStatus("OTP sent! Check your phone.", false);
+                    
+                    // Transition to step 3
+                    document.getElementById('step-phone').style.display = 'none';
+                    document.getElementById('step-otp').style.display = 'block';
+                    
+                    // Show confirmation toast notification
                     const toast = document.getElementById('otpToast');
-                    const toastCode = document.getElementById('toastOtpCode');
-                    toastCode.textContent = data.otp;
                     toast.classList.add('show');
                     
-                    // Auto hide toast after 8 seconds
                     setTimeout(() => {
                         toast.classList.remove('show');
                     }, 8000);
                 } else {
                     setStatus(data.message || "Failed to send OTP.", true);
                     sendBtn.disabled = false;
-                    phoneInput.disabled = false;
                 }
             } catch (err) {
                 setStatus("Network error. Could not send OTP.", true);
                 sendBtn.disabled = false;
-                phoneInput.disabled = false;
             }
         }
 
-        async function verifyOTP() {
-            const phone = document.getElementById('phoneNumber').value.trim();
+        async function handleOtpSubmit() {
+            const username = document.getElementById('username').value.trim();
+            const password = document.getElementById('password').value;
+            const countryCode = document.getElementById('countryCodeSelect').value;
+            const phoneRest = document.getElementById('phoneNumber').value.trim();
             const otp = document.getElementById('otpCode').value.trim();
+            const phone = countryCode + phoneRest;
             
             if (!otp || otp.length !== 6) {
                 setStatus("Please enter a valid 6-digit OTP code.", true);
@@ -407,44 +643,39 @@
             }
             
             setStatus("Verifying OTP...", false);
+            const verifyBtn = document.getElementById('verifyOtpBtn');
+            verifyBtn.disabled = true;
             
             try {
-                const response = await fetch(`${API_URL}/otp/verify`, {
+                const response = await fetch(`${API_URL}/auth/verify-otp`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ phone, otp })
+                    body: JSON.stringify({ username, password, phone, otp, action: authAction })
                 });
                 const data = await response.json();
                 
                 if (data.success && data.access_token) {
                     localStorage.setItem('jwt_token', data.access_token);
-                    setStatus("OTP verified successfully!", false);
+                    setStatus("Verified successfully!", false);
                     
-                    // Hide the toast
                     document.getElementById('otpToast').classList.remove('show');
                     
                     setTimeout(() => {
                         updateUI();
                         setStatus("");
+                        verifyBtn.disabled = false;
                     }, 800);
                 } else {
                     setStatus(data.message || "Invalid or expired OTP.", true);
+                    verifyBtn.disabled = false;
                 }
             } catch (err) {
-                setStatus("Network or server error during verification.", true);
+                setStatus("Verification failed due to a network or server error.", true);
+                verifyBtn.disabled = false;
             }
         }
 
-        function copyToastCode() {
-            const toastCode = document.getElementById('toastOtpCode');
-            const originalVal = toastCode.textContent;
-            navigator.clipboard.writeText(originalVal).then(() => {
-                toastCode.textContent = "Copied!";
-                setTimeout(() => {
-                    toastCode.textContent = originalVal;
-                }, 1500);
-            });
-        }
+        // Copy functionality removed for security
 
         async function fetchUserDetails() {
             const token = localStorage.getItem('jwt_token');
@@ -478,63 +709,10 @@
                 document.getElementById('digital-signature-text').textContent = "Loading...";
             }
         }
-        // Run on start
+        
+        // Initialize UI
         updateUI();
-
-        async function authenticateUser() {
-            const username = document.getElementById('username').value;
-            const password = document.getElementById('password').value;
-            const bot_check = document.getElementById('bot_check').value;
-            setStatus("Authenticating...", false);
-            
-            try {
-                // First try standard login
-                let response = await fetch(`${API_URL}/login`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ username, password })
-                });
-                let data = await response.json();
-                
-                if (data.success && data.access_token) {
-                    localStorage.setItem('jwt_token', data.access_token);
-                    setStatus("Login successful!", false);
-                    setTimeout(() => { updateUI(); setStatus(""); }, 800);
-                    return;
-                }
-                
-                // If login fails, pivot to registration automatically
-                response = await fetch(`${API_URL}/register`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ username, password, bot_check })
-                });
-                data = await response.json();
-                
-                if (data.success) {
-                    setStatus("Registration successful! Password Encrypted via Digital Signature.", false);
-                    // Login with newly created digital signature
-                    setTimeout(() => { loginUserDirect(username, password); }, 1500);
-                } else {
-                    setStatus("Registration failed: " + (data.message || "Unknown error."), true);
-                }
-            } catch (err) {
-                setStatus("Network or server error.", true);
-            }
-        }
-
-        async function loginUserDirect(username, password) {
-            const response = await fetch(`${API_URL}/login`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ username, password })
-            });
-            const data = await response.json();
-            if (data.success && data.access_token) {
-                localStorage.setItem('jwt_token', data.access_token);
-                updateUI(); setStatus("");
-            }
-        }
+        populateCountryCodes();
 
         function logout() {
             localStorage.removeItem('jwt_token');
@@ -542,14 +720,18 @@
             // Reset standard fields
             document.getElementById('username').value = '';
             document.getElementById('password').value = '';
-            // Reset OTP fields & components
             document.getElementById('phoneNumber').value = '';
-            document.getElementById('phoneNumber').disabled = false;
             document.getElementById('otpCode').value = '';
-            document.getElementById('otpInputContainer').style.display = 'none';
-            document.getElementById('sendOtpBtn').style.display = 'block';
+            
+            // Reset buttons state
             document.getElementById('sendOtpBtn').disabled = false;
-            document.getElementById('verifyOtpBtn').style.display = 'none';
+            document.getElementById('verifyOtpBtn').disabled = false;
+            
+            // Reset step visibility
+            document.getElementById('step-credentials').style.display = 'block';
+            document.getElementById('step-phone').style.display = 'none';
+            document.getElementById('step-otp').style.display = 'none';
+            
             // Hide toast if visible
             document.getElementById('otpToast').classList.remove('show');
             // Reset hacker modules
