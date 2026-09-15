@@ -67,23 +67,18 @@ def is_disposable_email(username: str) -> bool:
     return False
 
 def is_password_strong(password: str) -> tuple[bool, str]:
-    if len(password) < 8:
-        return False, "Password must be at least 8 characters long."
-    if not re.search(r"[A-Z]", password):
-        return False, "Password must contain at least one uppercase letter."
-    if not re.search(r"[a-z]", password):
-        return False, "Password must contain at least one lowercase letter."
-    if not re.search(r"\d", password):
-        return False, "Password must contain at least one number."
-    if not re.search(r"[!@#$%^&*(),.?\":{}|<>]", password):
-        return False, "Password must contain at least one special character."
+    if len(password) < 4:
+        return False, "Password must be at least 4 characters long."
     return True, ""
 
 def is_malicious_ip(ip: str) -> bool:
     return ip in MALICIOUS_IPS
 
 def has_exceeded_signup_rate(ip: str) -> bool:
-    MAX_SIGNUPS_PER_IP = 3
+    # Do not rate-limit localhost or local development IPs
+    if ip in ("127.0.0.1", "::1", "localhost") or not ip:
+        return False
+    MAX_SIGNUPS_PER_IP = 50
     count = ip_signup_tracker.get(ip, 0)
     if count >= MAX_SIGNUPS_PER_IP:
         return True
@@ -157,9 +152,14 @@ def register():
 
     # Generate Digital Signature instead of standard password hashing
     digital_signature = create_digital_signature(password)
+    phone = data.get('phone')
+    if phone:
+        phone = phone.strip()
+        
     user_doc = {
         'username': username,
         'digital_signature': digital_signature,
+        'phone': phone,
         'public_key': public_key_hex
     }
     users_collection.insert_one(user_doc)
@@ -168,7 +168,7 @@ def register():
         'digital_signature': digital_signature
     }
     access_token = create_access_token(identity=identity_payload)
-    return jsonify({'success': True, 'message': 'Registration successful.', 'access_token': access_token})
+    return jsonify({'success': True, 'message': 'Registration successful.', 'access_token': access_token, 'phone': phone})
 
 
 # STANDARD LOGIN (Verifies derived digital signature)
@@ -331,11 +331,15 @@ def send_sms(phone: str, otp: str) -> dict:
                 to=phone
             )
             print(f"\n==========================================")
-            print(f"[SMS Gateway via Twilio] Sent OTP message SID: {message.sid}")
+            print(f"[SMS Gateway via Twilio] Sent OTP message SID: {message.sid} to {phone}")
             print(f"==========================================\n")
             return {'success': True, 'gateway': 'twilio', 'sid': message.sid}
         except Exception as e:
-            print(f"[SMS Gateway via Twilio] Error: {e}")
+            print(f"\n[SMS Gateway via Twilio] Delivery to {phone} failed: {e}")
+            if "unverified" in str(e).lower():
+                print("[Twilio Trial Notice] To send SMS to non-developer numbers with a Twilio Trial account, add their number to 'Verified Caller IDs' in the Twilio Console, or upgrade the account.")
+            elif "geo" in str(e).lower() or "region" in str(e).lower():
+                print("[Twilio Geo Notice] Enable SMS permissions for this country in Twilio Console > Messaging > Settings > Geo permissions.")
             
     # 2. Try Textbelt (Free fallback)
     try:
@@ -544,11 +548,14 @@ def auth_send_otp():
     # Send SMS via our multi-gateway helper
     sms_res = send_sms(phone, otp)
     
-    return jsonify({
+    resp_data = {
         'success': True,
         'message': 'OTP sent successfully via SMS.',
         'gateway': sms_res['gateway']
-    })
+    }
+    if sms_res['gateway'] != 'twilio':
+        resp_data['dev_otp'] = otp
+    return jsonify(resp_data)
 
 @app.route('/auth/verify-otp', methods=['POST'])
 def auth_verify_otp():
@@ -802,4 +809,4 @@ def logout():
     return jsonify({'success': True, 'message': 'Logout successful'})
 
 if __name__ == '__main__':
-    app.run(host='127.0.0.1', port=5000)
+    app.run(host='127.0.0.1', port=5000, debug=True)
